@@ -27,7 +27,7 @@ const CustomHeader: React.FC<CustomHeaderProps> = ({
             placeholder="Search"
             placeholderTextColor="#f1f1f1"
             style={styles.searchBar}
-            onChangeText={onSearch}
+            onChangeText={onSearch} // Pass search text up to parent
           />
         </BlurView>
       </BlurView>

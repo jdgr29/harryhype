@@ -9,9 +9,11 @@ import {
   Text,
   ActivityIndicator,
   StatusBar,
-  SafeAreaView,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { router } from "expo-router";
+import { useStartups } from "@/hooks/useStartups";
+import { Startup } from "@/types/startups.types";
+import AntDesign from "@expo/vector-icons/AntDesign";
 
 const { width } = Dimensions.get("window");
 const HEADER_HEIGHT = 60; // Adjust this value according to your header height
@@ -20,11 +22,15 @@ const HEIGHT = Dimensions.get("window").height - HEADER_HEIGHT - FOOTER_HEIGHT; 
 
 // Memoized Item Component
 const CompanyItem = React.memo(
-  ({ item, onNavigate }: { item: any; onNavigate: any }) => (
+  ({ item, onNavigate }: { item: Startup; onNavigate: any }) => (
     <View style={styles.imageContainer}>
       <TouchableOpacity onPress={() => onNavigate(item)} activeOpacity={1}>
         <Image
-          source={{ uri: item.imageUrl }}
+          source={{
+            uri:
+              item.startup_image ||
+              "https://st4.depositphotos.com/17828278/24401/v/450/depositphotos_244011872-stock-illustration-image-vector-symbol-missing-available.jpg",
+          }}
           style={styles.image}
           resizeMode="cover"
           onError={() => console.log("Failed to load image")}
@@ -32,28 +38,30 @@ const CompanyItem = React.memo(
 
         <View style={styles.overlay}>
           <Text style={styles.companyName}>{item.name}</Text>
-          <Text style={styles.companyDescription}>{item.description}</Text>
-          <View style={styles.shareInfo}>
-            <Text style={styles.sharesText}>
-              {item.sharesIssued}
-              <Image
-                source={{ uri: "https://via.placeholder.com/20" }}
-                style={styles.shareIcon}
-              />
-              {item.shareName} ({item.shareAbbreviation})
+          <View style={{ height: 200 }}>
+            <Text
+              ellipsizeMode="tail"
+              numberOfLines={11}
+              style={styles.companyDescription}
+            >
+              {item.description}
             </Text>
           </View>
         </View>
       </TouchableOpacity>
       <View style={styles.interactionContainer}>
-        <TouchableOpacity onPress={() => alert(`Comment on image ${item.id}`)}>
-          <Text style={styles.interactionText}>Like</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => alert(`Share image ${item.id}`)}>
-          <Text style={styles.interactionText}>Share</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => alert(`Liked image ${item.id}`)}>
-          <Text style={styles.interactionText}>Contact Owner</Text>
+        {/* //TODO create function to give likes. or take them out */}
+        <TouchableOpacity
+          style={{
+            backgroundColor: "rgba(0,0,0,0.5)",
+            flexDirection: "row",
+            padding: 8,
+            alignItems: "center",
+            borderRadius: 8,
+          }}
+        >
+          <AntDesign name="heart" size={24} color="red" />
+          <Text style={styles.interactionText}>Likes {item.likes}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -61,118 +69,78 @@ const CompanyItem = React.memo(
 );
 
 const ImageFeed = () => {
-  const [companies, setCompanies] = useState(
-    Array.from({ length: 20 }, (_, index) => ({
-      id: String(index + 1),
-      imageUrl: `https://picsum.photos/seed/${index}/600/800`,
-      name: `Company ${index + 1}`,
-      description: `Description for Company ${
-        index + 1
-      }. This is a brief overview of what the company does.`,
-      sharesIssued: (Math.floor(Math.random() * 10000) + 1000).toLocaleString(),
-      shareName: "Share Name",
-      shareAbbreviation: "SHR",
-    }))
-  );
-
   const [currentIndex, setCurrentIndex] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const router = useRouter();
-
-  const handleScroll = (event: any) => {
-    const index = Math.floor(event.nativeEvent.contentOffset.y / HEIGHT);
-    setCurrentIndex(index);
-  };
+  const [page, setPage] = useState(0);
+  const [filters, setFilters] = useState("Todas");
+  const [search, setSearch] = useState("");
+  const { startups, loading, error } = useStartups(page, 10, filters, search);
 
   const loadMoreImages = () => {
-    if (loadingMore) return; // Prevent multiple triggers
-    setLoadingMore(true);
-
-    // Simulate fetching new data
-    setTimeout(() => {
-      const newCompanies = Array.from({ length: 20 }, (_, index) => ({
-        id: String(companies.length + index + 1),
-        imageUrl: `https://picsum.photos/seed/${
-          companies.length + index
-        }/600/800`,
-        name: `Company ${companies.length + index + 1}`,
-        description: `Description for Company ${
-          companies.length + index + 1
-        }. This is a brief overview of what the company does.`,
-        sharesIssued: (
-          Math.floor(Math.random() * 10000) + 1000
-        ).toLocaleString(),
-        shareName: "Share Name",
-        shareAbbreviation: "SHR",
-      }));
-      setCompanies((prevCompanies) => [...prevCompanies, ...newCompanies]);
-      setLoadingMore(false);
-    }, 1500); // Simulate a 2-second load
+    if (!loadingMore && !loading) {
+      setLoadingMore(true);
+      setPage((prev) => prev + 1);
+    }
   };
-
-  const handleNavigate = useCallback(
-    (company: any) => {
-      router.push({
-        params: { id: company.id },
-        pathname: "/private/feed/details/[id]",
-      });
-    },
-    [router]
-  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    // Simulate fetching new data
-    setTimeout(() => {
-      // Optionally reset your data here
-      setRefreshing(false);
-    }, 2000); // Simulate a 2-second load
+    setPage(0); // Reset page to 0 to fetch first batch
+    setSearch(""); // Reset search if necessary
+    setFilters("Todas"); // Reset filters if necessary
+    // Call the hook again (it'll fetch the first page)
+    setRefreshing(false);
   }, []);
+
+  const handleTabChange = (tab: string) => {
+    setFilters(tab);
+    setPage(0); // Reset page when changing tabs
+  };
+
+  // Define the handleNavigate function
+  const handleNavigate = (id: string) => {
+    router.push({
+      params: {
+        id: id,
+      },
+      pathname: "/private/feed/details/[id]",
+    }); // Adjust the route according to your structure
+  };
 
   const renderItem = useCallback(
     ({ item }: { item: any }) => (
-      <CompanyItem item={item} onNavigate={handleNavigate} />
+      <CompanyItem item={item} onNavigate={() => handleNavigate(item.id)} /> // Pass the id to the function
     ),
     [handleNavigate]
   );
 
+  if (loading) {
+    return <ActivityIndicator size="large" color="#f1f1f1" />;
+  }
+
+  if (error) {
+    return <Text>Error: {error}</Text>;
+  }
+
   return (
-    <>
+    <View style={{ backgroundColor: "#121212" }}>
       <StatusBar animated barStyle={"default"} />
       <FlatList
-        data={companies}
+        data={startups}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        pagingEnabled
-        onScroll={handleScroll}
-        showsVerticalScrollIndicator={false}
         onEndReached={loadMoreImages}
         onEndReachedThreshold={0.1}
-        snapToInterval={HEIGHT}
-        snapToAlignment="start"
-        decelerationRate="fast"
-        getItemLayout={(data, index) => ({
-          length: HEIGHT,
-          offset: HEIGHT * index,
-          index,
-        })}
-        maxToRenderPerBatch={5} // Customize as needed
-        windowSize={10} // Customize as needed
-        extraData={currentIndex} // Include state that affects rendering
-        refreshing={refreshing} // Pass the refreshing state
-        onRefresh={onRefresh} // Set the refresh function
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         ListFooterComponent={
           loadingMore ? (
-            <ActivityIndicator
-              style={{ backgroundColor: "#121212" }}
-              size="large"
-              color="#f1f1f1"
-            />
+            <ActivityIndicator size="large" color="#f1f1f1" />
           ) : null
-        } // Loader at the bottom
+        }
       />
-    </>
+    </View>
   );
 };
 
@@ -191,9 +159,10 @@ const styles = StyleSheet.create({
     bottom: 160,
     left: 10,
     right: 10,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: "rgba(0, 0, 0, 0.9)",
     padding: 15,
     borderRadius: 10,
+    gap: 8,
   },
   companyName: {
     fontSize: 20,
@@ -220,14 +189,16 @@ const styles = StyleSheet.create({
   },
   interactionContainer: {
     position: "absolute",
-    bottom: 100,
+    padding: 1,
+    bottom: 80,
     left: 10,
     right: 10,
+    gap: 8,
     flexDirection: "row",
     justifyContent: "space-between",
+    flexWrap: "wrap",
   },
   interactionText: {
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
     color: "white",
     padding: 10,
     borderRadius: 5,
