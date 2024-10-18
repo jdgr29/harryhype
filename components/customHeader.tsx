@@ -22,14 +22,14 @@ const CustomHeader: React.FC<CustomHeaderProps> = ({
           selectedTab={selectedTab}
           onTabChange={onTabChange}
         />
-        <BlurView intensity={10} style={{ width: "100%", borderRadius: 8 }}>
+        {/* <BlurView intensity={10} style={{ width: "100%", borderRadius: 8 }}>
           <TextInput
             placeholder="Search"
             placeholderTextColor="#f1f1f1"
             style={styles.searchBar}
             onChangeText={onSearch} // Pass search text up to parent
           />
-        </BlurView>
+        </BlurView> */}
       </BlurView>
     </SafeAreaView>
   );

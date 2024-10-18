@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -13,25 +13,49 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import { GroqAI } from "@/libs/groq.ai";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { supabase } from "@/libs/supabase";
+
+const base_url = process.env.EXPO_PUBLIC_BASE_API_URL!;
+const create_startup_api = process.env.EXPO_PUBLIC_CREATE_STARTUP!;
 
 const AddStartup = () => {
-  const [name, setName] = useState<string | null>("");
-  const [description, setDescription] = useState<string | null>("");
-  const [tokenName, setTokenName] = useState<string | null>("");
-  const [tokenSymbol, setTokenSymbol] = useState<string | null>("");
-  const [tokenImage, setTokenImage] = useState<string | null | Blob>(null);
-  const [startupImage, setStartupImage] = useState<string | null | Blob>(null);
+  const [sessionToken, setSessionToken] = useState<null | string | undefined>(
+    null
+  );
+  useEffect(() => {
+    const sessionGetter = async () => {
+      const token = await supabase.auth.getSession();
+      if (!token.data) {
+        return;
+      }
+      setSessionToken(token.data.session?.access_token);
+    };
+    sessionGetter();
+  }, []);
+  const [name, setName] = useState<string | null | undefined>("");
+  const [description, setDescription] = useState<string | null | undefined>("");
+  const [tokenName, setTokenName] = useState<string | null | undefined>("");
+  const [tokenSymbol, setTokenSymbol] = useState<string | null | undefined>("");
+  const [tokenImage, setTokenImage] = useState<
+    string | null | Blob | ImageManipulator.ImageResult
+  >(null);
+  const [startupImage, setStartupImage] = useState<
+    string | null | Blob | ImageManipulator.ImageResult
+  >(null);
   const [aiModalVisible, setAiModalVisible] = useState<boolean>(false);
-  const [businessIdea, setBusinessIdea] = useState<string | null>("");
+  const [businessIdea, setBusinessIdea] = useState<string | null | undefined>(
+    ""
+  );
 
   const AiHandler = async () => {
     try {
       const businessName = await GroqAI([
         {
           role: "user",
-          content: `give me a name for just one string with the name no comments of your own just for example answer: Example Name or Name if it only has one word and without quotations marks and if you need more than two words just add an empty space between them, be creative not such an obvious name ${businessIdea}. The answer must be in spanish remember to use spaces to separate words if needed. The answer must be for example: Some Name`,
+          content: `give me a name for just one string with the name no comments of your own just for example answer: Example Name or Name if it only has one word and without quotations marks and if you need more than two words just add an empty space between them, be creative not such an obvious name ${businessIdea}. The answer must be in spanish remember to use spaces to separate words if needed. The answer must be for example: Some Name. It is imperative that you only answer with the name. Example answer: Business Name`,
         },
       ]);
 
@@ -63,12 +87,12 @@ const AddStartup = () => {
   };
 
   const [errors, setErrors] = useState<{
-    name: string | null | Blob;
-    description: string | null | Blob;
-    tokenName: string | null | Blob;
-    tokenSymbol: string | null | Blob;
-    tokenImage: string | null | Blob;
-    startupImage: string | null | Blob;
+    name: string | null | Blob | undefined;
+    description: string | null | Blob | undefined;
+    tokenName: string | null | Blob | undefined;
+    tokenSymbol: string | null | Blob | undefined;
+    tokenImage: string | null | Blob | undefined;
+    startupImage: string | null | Blob | undefined;
   }>({
     name: null,
     description: null,
@@ -97,8 +121,15 @@ const AddStartup = () => {
     });
 
     if (!result.canceled) {
-      //TODO check if we actually need the uri or the entire thing omg jaja
-      setImage(result.assets[0].uri);
+      const compressedImage = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 800 } }],
+        { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      if (compressedImage) {
+        setImage(compressedImage);
+      }
     }
   };
 
@@ -136,34 +167,41 @@ const AddStartup = () => {
     formData.append("token_name", tokenName ?? "");
     formData.append("token_symbol", tokenSymbol ?? "");
 
-    // Append images
-    formData.append("token_image", {
-      uri: tokenImage,
-      type: "image/jpeg", // Adjust the type as necessary
-      name: "token_image.jpg",
-    });
-    formData.append("startup_image", {
-      uri: startupImage,
-      type: "image/jpeg", // Adjust the type as necessary
-      name: "startup_image.jpg",
-    });
+    if (tokenImage && tokenImage.uri) {
+      formData.append("token_image", {
+        uri: tokenImage.uri,
+        type: "image/jpeg", // Adjust the type as necessary (ensure this is correct)
+        name: tokenImage?.fileName || "noname",
+      });
+    }
+
+    if (startupImage && startupImage.uri) {
+      formData.append("startup_image", {
+        uri: startupImage.uri,
+        type: "image/jpeg",
+        name: startupImage?.fileName || "noname",
+      });
+    }
 
     try {
-      const response = await fetch("YOUR_API_ENDPOINT_HERE", {
+      const response = await fetch(`${base_url}${create_startup_api}`, {
         method: "POST",
         body: formData,
         headers: {
+          Authorization: `Bearer ${sessionToken}`, // Add the Bearer token
           "Content-Type": "multipart/form-data",
         },
       });
 
       const data = await response.json();
+
       if (response.ok) {
-        Alert.alert("Success", "Startup created successfully!");
+        Alert.alert("✅", "startup creada ");
         //TODO add success animation
-        router.push("/my-startups"); // Navigate to the My Startups page
+        router.back();
       } else {
-        Alert.alert("Error", data.message || "Something went wrong");
+        console.log("data error? or something?", data);
+        Alert.alert("Error", "algo ha salido mal ❌");
         //TODO add failed animation
       }
     } catch (error) {
@@ -268,14 +306,14 @@ const AddStartup = () => {
           onPress={() => pickImage(setTokenImage)}
         >
           <Text style={styles.imagePickerText}>
-            {tokenImage ? "Change Shares Image" : "Pick Shares Image"}
+            {tokenImage?.uri ? "Change Shares Image" : "Pick Shares Image"}
           </Text>
         </TouchableOpacity>
         {errors.tokenImage ? (
           <Text style={styles.errorText}>{errors.tokenImage}</Text>
         ) : null}
         {tokenImage && (
-          <Image source={{ uri: tokenImage }} style={styles.image} />
+          <Image source={{ uri: tokenImage?.uri }} style={styles.image} />
         )}
 
         {/* Startup Image Picker */}
@@ -284,14 +322,14 @@ const AddStartup = () => {
           onPress={() => pickImage(setStartupImage)}
         >
           <Text style={styles.imagePickerText}>
-            {startupImage ? "Change Startup Image" : "Pick Startup Image"}
+            {startupImage?.uri ? "Change Startup Image" : "Pick Startup Image"}
           </Text>
         </TouchableOpacity>
         {errors.startupImage ? (
           <Text style={styles.errorText}>{errors.startupImage}</Text>
         ) : null}
-        {startupImage && (
-          <Image source={{ uri: startupImage }} style={styles.image} />
+        {startupImage?.uri && (
+          <Image source={{ uri: startupImage?.uri }} style={styles.image} />
         )}
 
         {/* AI Assistance Button */}

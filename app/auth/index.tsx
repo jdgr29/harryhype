@@ -1,5 +1,4 @@
-import { login } from "@/services/user";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Text,
   TextInput,
@@ -10,15 +9,59 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Pressable,
 } from "react-native";
 import { router } from "expo-router";
 import { supabase } from "@/libs/supabase";
-
+import * as LocalAuthentication from "expo-local-authentication";
+import * as SecureStore from "expo-secure-store"; // Import SecureStore
+import AntDesign from "@expo/vector-icons/AntDesign";
 const LoginScreen = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  // const [biometricAvailable, setBiometricAvailable] = useState(false);
+
+  // Function to handle biometric authentication
+  const authenticate = async () => {
+    const result = await LocalAuthentication.authenticateAsync();
+    if (result.error) {
+      Alert.alert("Biometric Authentication Failed", "Please try again.");
+      return false;
+    }
+    return result.success;
+  };
+
+  // Check for biometric authentication availability
+  // useEffect(() => {
+  //   (async () => {
+  //     const hasHardware = await LocalAuthentication.hasHardwareAsync();
+  //     const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+  //     setBiometricAvailable(hasHardware && isEnrolled);
+  //   })();
+  // }, []);
+
+  const handleBiometricLogin = async () => {
+    const authenticated = await authenticate();
+    if (authenticated) {
+      const storedEmail = await SecureStore.getItemAsync("email");
+      const storedPassword = await SecureStore.getItemAsync("password");
+
+      if (storedEmail && storedPassword) {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: storedEmail,
+          password: storedPassword,
+        });
+
+        if (error) {
+          Alert.alert(error.message);
+        } else {
+          router.push("/private");
+        }
+      } else {
+        Alert.alert("No saved credentials found. Please log in manually.");
+      }
+    }
+  };
 
   const validateForm = async () => {
     if (!email || !password) {
@@ -26,16 +69,17 @@ const LoginScreen = () => {
       return;
     }
     setError("");
+
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
+
     if (error) {
       Alert.alert(error.message);
-      return;
-    }
-
-    if (!error) {
+    } else {
+      await SecureStore.setItemAsync("email", email);
+      await SecureStore.setItemAsync("password", password);
       router.push("/private");
     }
   };
@@ -75,14 +119,25 @@ const LoginScreen = () => {
         />
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
+        <TouchableOpacity
+          style={styles.biometricButton}
+          onPress={handleBiometricLogin}
+        >
+          <AntDesign name="scan1" size={44} color="white" />
+          <Text style={styles.buttonText}>Login with Face ID</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.loginButton} onPress={validateForm}>
           <Text style={styles.buttonText}>Login</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity>
+        {/* <TouchableOpacity>
           <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
+
+        {/* Biometric login button */}
+        {/* {biometricAvailable && ( */}
+
+        {/* )} */}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -116,6 +171,12 @@ const styles = StyleSheet.create({
   },
   loginButton: {
     backgroundColor: "#6200ee",
+    paddingVertical: 15,
+    borderRadius: 8,
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  biometricButton: {
     paddingVertical: 15,
     borderRadius: 8,
     alignItems: "center",

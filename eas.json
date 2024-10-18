@@ -1,0 +1,35 @@
+{
+  "cli": {
+    "version": ">= 12.3.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m-medium"
+      },
+      "env": {
+        "EXPO_PUBLIC_BASE_API_URL": "https://fbkuqhzrsbdoerzrypwj.supabase.co/functions/v1/",
+        "EXPO_PUBLIC_GET_ALL_TOKENS_AND_METADATA_API": "getalltokenmetadataandbalance",
+        "EXPO_PUBLIC_MINT_SHARES": "mintshares",
+        "EXPO_PUBLIC_REGISTER": "register",
+        "EXPO_PUBLIC_SHARES_ISSUES_GETTER": "sharesishuesgetter",
+        "EXPO_PUBLIC_TOKEN_BALANCE_AND_METADATA_GETTER": "tokenmetadatagetter",
+        "EXPO_PUBLIC_TRANSFER_SHARES": "transfershares",
+        "EXPO_PUBLIC_CREATE_STARTUP": "createstartup",
+        "EXPO_PUBLIC_LIKE_STARTUP": "likes"
+      }
+    },
+    "production": {
+      "autoIncrement": true
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

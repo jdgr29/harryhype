@@ -33,9 +33,14 @@ const TransactionHistoryScreen = () => {
 
   return (
     <View style={styles.container}>
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
         <Image
-          style={{ width: 73, height: 73, objectFit: "cover" }}
+          style={{
+            width: 73,
+            height: 73,
+            objectFit: "cover",
+            borderRadius: 100,
+          }}
           source={{ uri: token.metadata.uri }}
           alt="token image"
         />
@@ -75,7 +80,7 @@ const TransactionHistoryScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#121212", padding: 20 },
+  container: { flex: 1, backgroundColor: "#121212", padding: 20, gap: 16 },
   header: { color: "white", fontSize: 24, marginBottom: 10 },
   balance: { color: "white", fontSize: 18, marginBottom: 10 },
   publicAddress: { color: "#007bff", marginBottom: 5 },

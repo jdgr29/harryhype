@@ -1,21 +1,31 @@
 // components/TabSwitcher.js
+import { BlurView } from "expo-blur";
 import React from "react";
 import { View, TouchableOpacity, Text, StyleSheet } from "react-native";
 
 const TabSwitcher = ({ tabs, selectedTab, onTabChange }: any) => {
   return (
-    <View>
-      <Text
+    <View style={{ width: "100%" }}>
+      <BlurView
         style={{
-          color: "#FBFBFB",
-          fontSize: 24,
-          fontStyle: "italic",
-          textAlign: "center",
-          fontWeight: "bold",
+          backgroundColor: "rgba(0,0,0,0.5)",
+          width: "100%",
+          padding: 8,
         }}
+        intensity={10}
       >
-        Harry Hype
-      </Text>
+        <Text
+          style={{
+            color: "#FBFBFB",
+            fontSize: 44,
+            fontStyle: "italic",
+            textAlign: "center",
+            fontWeight: "bold",
+          }}
+        >
+          Harry Hype
+        </Text>
+      </BlurView>
       <View style={styles.tabContainer}>
         {tabs.map((tab: any) => (
           <TouchableOpacity

@@ -67,18 +67,14 @@ export default function RootLayout() {
       const now = Date.now();
 
       if (appState === "active" && nextAppState !== "active") {
-        // App going to background, store the time
         lastActiveTimeRef.current = now;
       } else if (appState !== "active" && nextAppState === "active") {
-        // App becomes active again
         if (
           lastActiveTimeRef.current &&
           now - lastActiveTimeRef.current >= 54 * 60 * 1000
         ) {
-          // If the app was inactive for more than 54 minutes, log out
           logOut();
         } else {
-          // If the app became active before 54 minutes, refresh the token
           refreshSession();
         }
       }
@@ -111,7 +107,7 @@ export default function RootLayout() {
       screenOptions={{
         tabBarStyle: styles.tabBar,
         tabBarBackground: () => (
-          <BlurView intensity={100} style={StyleSheet.absoluteFill} />
+          <BlurView intensity={30} style={StyleSheet.absoluteFill} />
         ),
         tabBarActiveTintColor: "#ACF41A",
         tabBarInactiveTintColor: "#FFFFFF",
@@ -142,11 +138,6 @@ export default function RootLayout() {
       <Tabs.Screen
         name="wallet"
         options={{
-          // title: "Wallet",
-          // headerTransparent: true,
-          // headerTitleStyle: {
-          //   color: "#f1f1f1",
-          // },
           headerShown: false,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="wallet-outline" size={size} color={color} />
@@ -168,6 +159,7 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
+    // position: "relative",
     position: "absolute",
     left: 0,
     right: 0,
@@ -178,6 +170,7 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
     borderTopWidth: 0,
     overflow: "visible",
+    // zIndex: 100,
     backgroundColor: "rgba(0,0,0,0.6)",
   },
   tabLabel: {

@@ -8,43 +8,69 @@ import {
   TouchableOpacity,
   Alert,
   Linking,
+  ActivityIndicator,
 } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import { useStartups } from "@/hooks/useStartups";
 import { useUser } from "@/hooks/useUser";
-import { Startup } from "@/types/startups.types";
-import { getTokenMetadata } from "@/services/token";
-import { SupabaseTokenRecord, TokenData } from "@/types/token.types";
+import { TokenData } from "@/types/token.types";
 import FontAwesome5 from "@expo/vector-icons/FontAwesome5";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { useStartup } from "@/hooks/useStartup";
+
+const base_url = process.env.EXPO_PUBLIC_BASE_API_URL!;
+const shares_getter_api = process.env.EXPO_PUBLIC_SHARES_ISSUES_GETTER!;
+const token_data_getter =
+  process.env.EXPO_PUBLIC_TOKEN_BALANCE_AND_METADATA_GETTER!;
 
 const CompanyDetail = () => {
   const { id } = useLocalSearchParams();
-  const { startups, error, loading } = useStartups();
-  const { user, error: userError, loading: userLoading } = useUser();
+  const { user } = useUser();
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
+  const {
+    startup,
+    loading: startupLoading,
+    error: startupError,
+  } = useStartup(id as string);
+  const [publishedShares, setPublishedShares] = useState<
+    number | string | null
+  >(null);
 
-  // Find the company by ID
-  //TODO actually create a hook to get one company and not need to filter all companies
-  const company = startups?.find((company) => company.id === id);
-
+  useEffect(() => {
+    if (startup?.token?.mint_address) getSharesIssued(); //TODO finish
+  }, [startup?.token?.mint_address]);
   const getterHandler = async () => {
-    const metadata = await getTokenMetadata({
-      mint: company?.token.mint_address!,
-      userTokenAddress: user?.wallet_public_key!,
-    });
-    if (metadata) setTokenData(metadata);
+    if (startup?.token?.mint_address && user?.id) {
+      const call = await fetch(
+        `${base_url}${token_data_getter}?mint=${startup?.token
+          ?.mint_address!}&userWallet=${user?.wallet_public_key!}`
+      );
+      if (!call.ok) {
+        console.log(
+          "something has happened getting the token metadata",
+          call.status
+        );
+        return;
+      }
+      const response = await call.json();
+
+      if (response?.error) {
+        console.log("something has happened wrongly", response?.message);
+        return;
+      }
+
+      setTokenData(response?.message);
+    }
   };
 
   useEffect(() => {
-    if (company && user) {
+    if (startup?.token?.mint_address && user?.id) {
       getterHandler();
     }
-  }, [company, user]);
+  }, [startup?.token?.mint_address, user?.id]);
 
-  if (!company) {
+  if (!startup) {
     return (
       <View style={styles.wrapper}>
         <Text style={styles.errorText}>Company not found</Text>
@@ -53,7 +79,7 @@ const CompanyDetail = () => {
   }
 
   const handleCall = () => {
-    const phoneNumber = company.telephone_number;
+    const phoneNumber = startup.telephone_number;
     if (phoneNumber) {
       Linking.openURL(`tel:${phoneNumber}`);
     } else {
@@ -66,7 +92,7 @@ const CompanyDetail = () => {
 
   const handleWhatsApp = () => {
     const message = "¡Hola! Me gustaría saber más.";
-    const phoneNumber = company.whatsapp;
+    const phoneNumber = startup.whatsapp;
     if (phoneNumber) {
       Linking.openURL(
         `whatsapp://send?text=${encodeURIComponent(
@@ -77,8 +103,40 @@ const CompanyDetail = () => {
       Alert.alert("No WhatsApp", "Este startup aún no tiene WhatsApp");
     }
   };
+  const getSharesIssued = async () => {
+    try {
+      // Ensure mintAddress exists
+      const mintAddress = startup?.token?.mint_address;
+      if (!mintAddress) {
+        console.error("Mint address is missing");
+        return;
+      }
 
-  const handleOpenURL = (url) => {
+      const response = await fetch(`${base_url}${shares_getter_api}`, {
+        method: "POST",
+        body: JSON.stringify({ mintAddress: mintAddress }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        Alert.alert(
+          "no hemos podido conseguir la cantidad de shares publicadas"
+        );
+      }
+
+      const data = await response.json();
+      if (!data.err) {
+        setPublishedShares(data?.supply);
+      }
+      return data;
+    } catch (err) {
+      console.error("Error getting shares:", err);
+    }
+  };
+
+  const handleOpenURL = (url: string) => {
     if (url) {
       Linking.openURL(url).catch((err) =>
         console.error("Failed to open URL: ", err)
@@ -90,79 +148,100 @@ const CompanyDetail = () => {
 
   return (
     <View style={styles.wrapper}>
-      {/* Company Image */}
-      <Image
-        source={{ uri: company?.startup_image }}
-        style={styles.companyImage}
-      />
+      {tokenData?.metadata?.uri ? (
+        <>
+          {/* Company Image */}
 
-      <ScrollView contentContainerStyle={styles.container}>
-        {/* Token Information */}
-        <View style={styles.tokenSection}>
           <Image
-            source={{ uri: tokenData?.metadata.uri }}
-            style={styles.tokenImage}
+            source={{ uri: startup?.startup_image }}
+            style={styles.companyImage}
           />
-          <View style={styles.tokenInfo}>
-            <Text style={styles.tokenName}>
-              {tokenData?.metadata.name} (
-              {tokenData?.metadata.symbol?.toUpperCase()})
-            </Text>
-            <Text style={styles.issuedShares}>
-              {company?.shares} shares issued
-            </Text>
-          </View>
-        </View>
-        {/* Company Name */}
-        <Text style={styles.companyName}>{company?.name}</Text>
 
-        {/* Company Description */}
-        <Text style={styles.companyDescription}>{company?.description}</Text>
+          <ScrollView contentContainerStyle={styles.container}>
+            {/* Token Information */}
+            <View style={styles.tokenSection}>
+              <Image
+                source={{ uri: tokenData?.metadata.uri }}
+                style={styles.tokenImage}
+              />
+              <View style={styles.tokenInfo}>
+                <Text style={styles.tokenName}>
+                  {tokenData?.metadata.name} (
+                  {tokenData?.metadata.symbol?.toUpperCase()})
+                </Text>
+                <Text style={styles.issuedShares}>
+                  {publishedShares || "N/A"} shares issued
+                </Text>
+              </View>
+            </View>
+            {/* Company Name */}
+            <Text style={styles.companyName}>{startup?.name}</Text>
 
-        <View style={styles.divider} />
-        <View style={{ justifyContent: "flex-start", gap: 8 }}>
-          <TouchableOpacity
-            style={styles.socials}
-            // onPress={() => handleOpenURL(company.facebook)}
-          >
-            <FontAwesome5 name="facebook-square" size={24} color="#1877F2" />
-            <Text style={{ color: "white" }}>
-              {company.facebook || "Este startup aún no tiene Facebook"}
+            {/* Company Description */}
+            <Text style={styles.companyDescription}>
+              {startup?.description}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.socials}
-            // onPress={() => handleOpenURL(company.instagram)}
-          >
-            <FontAwesome6 name="square-instagram" size={24} color="#FD1D1D" />
-            <Text style={{ color: "white" }}>
-              {company.instagram || "Este startup aún no tiene Instagram"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.socials}
-            onPress={() => handleOpenURL(company.website)}
-          >
-            <MaterialCommunityIcons name="web" size={24} color="white" />
-            <Text style={{ color: "white" }}>
-              {company.website || "Este startup aún no tiene website"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.socials} onPress={handleCall}>
-            <FontAwesome name="phone" size={24} color="white" />
-            <Text style={{ color: "white" }}>
-              {company.telephone_number ||
-                "Este startup aún no tiene un número al cual llamar"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.socials} onPress={handleWhatsApp}>
-            <FontAwesome6 name="whatsapp" size={24} color="#25D366" />
-            <Text style={{ color: "white" }}>
-              {company.whatsapp || "Este startup aún no tiene WhatsApp"}
-            </Text>
-          </TouchableOpacity>
+
+            <View style={styles.divider} />
+            <View style={{ justifyContent: "flex-start", gap: 8 }}>
+              <TouchableOpacity
+                style={styles.socials}
+                // onPress={() => handleOpenURL(startup.facebook)}
+              >
+                <FontAwesome5
+                  name="facebook-square"
+                  size={24}
+                  color="#1877F2"
+                />
+                <Text style={{ color: "white" }}>
+                  {startup.facebook || "Este startup aún no tiene Facebook"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.socials}
+                // onPress={() => handleOpenURL(startup.instagram)}
+              >
+                <FontAwesome6
+                  name="square-instagram"
+                  size={24}
+                  color="#FD1D1D"
+                />
+                <Text style={{ color: "white" }}>
+                  {startup.instagram || "Este startup aún no tiene Instagram"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.socials}
+                onPress={() => handleOpenURL(startup.website)}
+              >
+                <MaterialCommunityIcons name="web" size={24} color="white" />
+                <Text style={{ color: "white" }}>
+                  {startup.website || "Este startup aún no tiene website"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.socials} onPress={handleCall}>
+                <FontAwesome name="phone" size={24} color="white" />
+                <Text style={{ color: "white" }}>
+                  {startup.telephone_number ||
+                    "Este startup aún no tiene un número al cual llamar"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.socials} onPress={handleWhatsApp}>
+                <FontAwesome6 name="whatsapp" size={24} color="#25D366" />
+                <Text style={{ color: "white" }}>
+                  {startup.whatsapp || "Este startup aún no tiene WhatsApp"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </>
+      ) : (
+        <View
+          style={{ justifyContent: "center", alignItems: "center", flex: 1 }}
+        >
+          <ActivityIndicator color="white" size={"large"} />
         </View>
-      </ScrollView>
+      )}
     </View>
   );
 };
@@ -182,6 +261,7 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 12,
     marginBottom: 16,
+    objectFit: "cover",
   },
   companyName: {
     fontSize: 28,

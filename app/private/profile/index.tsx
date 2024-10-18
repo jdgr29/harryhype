@@ -8,18 +8,24 @@ import {
   Image,
   Alert,
   SafeAreaView,
+  ActivityIndicator,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import * as ImagePicker from "expo-image-picker";
-import Animated, { Easing } from "react-native-reanimated";
+import * as ImageManipulator from "expo-image-manipulator";
+import Animated from "react-native-reanimated";
 import { useUser } from "@/hooks/useUser";
 import { supabase } from "@/libs/supabase";
+import { supabaseImageUploader } from "@/utils/supabase.bucket";
 
 const ProfilePage = () => {
   const { user, loading, error } = useUser();
-  const [name, setName] = useState(user?.name! || ""); // Placeholder for user's name
-  const [email, setEmail] = useState(user?.email! || ""); // Placeholder for user's email
-  const [photo, setPhoto] = useState<string | null>(user?.photo! || null); // Photo state
+  const [name, setName] = useState(user?.name || "");
+  const [email, setEmail] = useState(user?.email || "");
+  const [photo, setPhoto] = useState<{} | null>(user?.photo || null);
+  const [fileName, setFileName] = useState<string | null | undefined>(null);
+  const [loadingPhoto, setLoadingPhoto] = useState(false); // Loading state for photo upload
+  const [loadingSave, setLoadingSave] = useState(false); // Loading state for profile save
 
   const handleImagePick = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -30,23 +36,65 @@ const ProfilePage = () => {
     });
 
     if (!result.canceled) {
-      setPhoto(result.assets[0].uri); // Set the photo URI
+      const compressedImage = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 250 } }],
+        { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      if (compressedImage) {
+        setPhoto(compressedImage);
+      }
+
+      setFileName(
+        result.assets[0].fileName || String(Math.floor(Math.random() * 100))
+      );
     }
   };
 
-  const handleSave = () => {
-    //TODO create function to do the updates
-    // Implement save functionality
-    Alert.alert(
-      "Profile Updated",
-      "Your profile has been updated successfully."
+  const handleSave = async () => {
+    setLoadingSave(true); // Set loading state
+    const validFileName = fileName?.replace(/[^a-zA-Z0-9-_\.]/g, "_");
+
+    const form = new FormData();
+
+    form.append("photo", {
+      uri: photo?.uri!,
+      name: fileName || "photo.jpg",
+      type: photo?.mimeType,
+    });
+
+    const updatedPhoto = await supabaseImageUploader(
+      form,
+      fileName,
+      false,
+      true
     );
+
+    if (updatedPhoto) {
+      const { data, error } = await supabase
+        .from("users")
+        .update({ photo: updatedPhoto })
+        .eq("id", user?.id);
+      if (error) {
+        Alert.alert(
+          "Error",
+          "An unknown error occurred while updating your photo ❌"
+        );
+      } else {
+        Alert.alert(
+          "Profile Updated ✅",
+          "Your profile has been updated successfully."
+        );
+      }
+    }
+    setLoadingSave(false); // Reset loading state
   };
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) {
-      console.log("error signount out?", error.message, error);
+      console.log("Error signing out?", error.message, error);
     }
   };
 
@@ -58,7 +106,7 @@ const ProfilePage = () => {
           <Animated.View style={styles.photoContainer}>
             {user?.photo ? (
               <Image
-                source={{ uri: user?.photo || photo }}
+                source={{ uri: photo?.uri ? photo?.uri : user?.photo }}
                 style={styles.profileImage}
               />
             ) : (
@@ -72,14 +120,18 @@ const ProfilePage = () => {
           </Text>
         </TouchableOpacity>
         <TextInput
-          value={user?.name || name}
+          value={name || user?.name}
           onChangeText={setName}
-          placeholder={user?.name || name || "Enter your name"}
+          placeholder={user?.name || "Enter your name"}
           style={styles.input}
         />
         <Text style={styles.email}>{user?.email || email}</Text>
         <TouchableOpacity onPress={handleSave} style={styles.saveButton}>
-          <Text style={styles.saveButtonText}>Save</Text>
+          {loadingSave ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.saveButtonText}>Save</Text>
+          )}
         </TouchableOpacity>
         <TouchableOpacity
           onPress={handleLogout}
@@ -96,7 +148,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: "center",
-    // justifyContent: "center",
     padding: 16,
     backgroundColor: "#121212",
   },
@@ -149,7 +200,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 36,
-    color: "#FFFFFF", // White text color for dark mode
+    color: "#FFFFFF",
     fontWeight: "bold",
     fontStyle: "italic",
   },

@@ -8,21 +8,29 @@ import {
   TouchableOpacity,
   TextInput,
   ImageSourcePropType,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams } from "expo-router";
-import { useStartups } from "@/hooks/useStartups";
 import { useUser } from "@/hooks/useUser";
-import { getTokenMetadata } from "@/services/token";
 import { TokenData } from "@/types/token.types";
 import FontAwesome5 from "@expo/vector-icons/FontAwesome5";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
+import { supabase } from "@/libs/supabase";
+import * as ImageManipulator from "expo-image-manipulator";
+import { supabaseImageUploader } from "@/utils/supabase.bucket";
+import { useStartup } from "@/hooks/useStartup";
 
+const base_url = process.env.EXPO_PUBLIC_BASE_API_URL!;
+const token_data_getter =
+  process.env.EXPO_PUBLIC_TOKEN_BALANCE_AND_METADATA_GETTER!;
 const CompanyDetail = () => {
   const { id } = useLocalSearchParams();
-  const { startups } = useStartups();
-  const { user } = useUser();
+  const { startup: company } = useStartup(id as string);
+  const { user, loading: userLoading } = useUser();
+  const [tokenLoading, setTokenLoading] = useState<boolean>(false);
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
   const [editableDescription, setEditableDescription] = useState("");
   const [editableFacebook, setEditableFacebook] = useState("");
@@ -33,15 +41,35 @@ const CompanyDetail = () => {
   >(null);
 
   const tokenDataGetter = async () => {
-    const metadata = await getTokenMetadata({
-      mint: company?.token.mint_address!,
-      userTokenAddress: user?.wallet_public_key!,
-    });
-    if (metadata) setTokenData(metadata);
-  };
+    try {
+      if (company?.token?.mint_address && user?.wallet_public_key) {
+        const call = await fetch(
+          `${base_url}${token_data_getter}?mint=${company?.token
+            ?.mint_address!}&userWallet=${user?.wallet_public_key!}`
+        );
 
-  // Find the company by ID
-  const company = startups?.find((company) => company.id === id);
+        const s = await call.json();
+        if (!call.ok) {
+          console.log(
+            "something has happened getting the token metadata",
+            call.status
+          );
+
+          return;
+        }
+        const response = await call.json();
+
+        if (response?.error) {
+          console.log("something has happened wrongly", response?.message);
+          return;
+        }
+
+        setTokenData(response?.message);
+      }
+    } catch (err) {
+      console.log("error getting token metadata while editing startup", err);
+    }
+  };
 
   useEffect(() => {
     tokenDataGetter();
@@ -52,7 +80,7 @@ const CompanyDetail = () => {
       setEditableWebsite(company?.website || "");
       setEditableImage(company?.startup_image || null);
     }
-  }, [company, user]);
+  }, [company?.token?.mint_address, user?.id]);
 
   const handleImagePicker = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -63,48 +91,112 @@ const CompanyDetail = () => {
     });
 
     if (!result.canceled) {
-      setEditableImage(result.assets[0].uri);
+      const compressedImage = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: 800 } }],
+        { compress: 1, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      setEditableImage({
+        ...compressedImage,
+        fileName: result.assets[0].fileName,
+      });
     }
   };
 
-  const handleSave = () => {
+  const form = new FormData();
+  const handleSave = async () => {
+    form.append("startup_image", {
+      uri: editableImage?.uri,
+      type: "image/jpeg", // Adjust the type as necessary (ensure this is correct)
+      name: editableImage?.fileName,
+    });
+
+    const newStartupPhoto = await supabaseImageUploader(
+      form!,
+      editableImage?.fileName,
+      false
+    );
+
+    if (!newStartupPhoto) {
+      return;
+    }
     const updatedData = {
       description: editableDescription,
       facebook: editableFacebook,
       instagram: editableInstagram,
       website: editableWebsite,
-      startup_image: editableImage,
+      startup_image: newStartupPhoto!,
     };
 
-    // Send updatedData via HTTP request
-    console.log("Updated data to be sent: ", updatedData);
-    // Add your HTTP request logic here
+    const { data, error } = await supabase
+      .from("startups")
+      .update(updatedData)
+      .eq("id", company?.id);
+
+    if (error) {
+      Alert.alert("Ha ocurrido algún error ❌");
+      console.log("something went wrong update", error);
+      return;
+    }
+    if (!error) {
+      Alert.alert("Startup Actualizada ✅");
+    }
+    return true;
   };
 
   return (
     <View style={styles.wrapper}>
       <ScrollView contentContainerStyle={styles.container}>
         {/* Editable Image */}
-        <TouchableOpacity onPress={handleImagePicker}>
-          <Image source={{ uri: editableImage }} style={styles.companyImage} />
+        <TouchableOpacity style={{ width: "100%" }} onPress={handleImagePicker}>
+          {!company?.startup_image ? (
+            <View
+              style={[
+                styles.companyImage,
+                { justifyContent: "center", alignItems: "center" },
+              ]}
+            >
+              <ActivityIndicator size={"large"} color="white" />
+            </View>
+          ) : (
+            <Image
+              source={{ uri: editableImage?.uri || company?.startup_image }}
+              style={styles.companyImage}
+            />
+          )}
           <Text style={styles.editText}>Edit Image</Text>
         </TouchableOpacity>
 
         {/* Editable Token Information */}
         <View style={styles.tokenSection}>
-          <Image
-            source={{ uri: tokenData?.metadata.uri }}
-            style={styles.tokenImage}
-          />
-          <View style={styles.tokenInfo}>
-            <Text style={styles.tokenName}>
-              {tokenData?.metadata.name} (
-              {tokenData?.metadata.symbol?.toUpperCase()})
-            </Text>
-            <Text style={styles.issuedShares}>
-              {company?.shares} shares issued
-            </Text>
-          </View>
+          {tokenData?.metadata?.uri ? (
+            <>
+              <Image
+                source={{ uri: tokenData?.metadata.uri }}
+                style={styles.tokenImage}
+              />
+              <View style={styles.tokenInfo}>
+                <Text style={styles.tokenName}>
+                  {tokenData?.metadata.name} (
+                  {tokenData?.metadata.symbol?.toUpperCase()})
+                </Text>
+                <Text style={styles.issuedShares}>
+                  {tokenData?.balance} shares issued
+                </Text>
+              </View>
+            </>
+          ) : (
+            <View
+              style={{
+                justifyContent: "center",
+                alignItems: "center",
+                width: "100%",
+              }}
+            >
+              <ActivityIndicator color={"white"} size={"large"} />
+            </View>
+          )}
         </View>
 
         {/* Editable Company Name */}
@@ -174,6 +266,7 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 12,
     marginBottom: 16,
+    objectFit: "cover",
   },
   editText: {
     color: "#ACF41A",
